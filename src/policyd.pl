@@ -65,7 +65,7 @@ my @HANDLERS = (
     },
 );
 
-my $VERBOSE = 0;
+my $VERBOSE = 1;
 
 my $DEFAULT_RESPONSE = 'DUNNO';
 
@@ -130,6 +130,21 @@ openlog($syslog_ident, $syslog_options, $syslog_facility);
 # Receive a bunch of attributes, evaluate the policy, send the result.
 #
 my %attr;
+my $POSTFIX_QUEUE_ID = undef;
+
+sub my_syslog {
+    # Args: log type, message.
+    my (@params) = @_; 
+    if(defined $params[1] && defined($POSTFIX_QUEUE_ID)) {
+        $params[1] = $params[1]. " log_id:$POSTFIX_QUEUE_ID ";
+    }
+    #print Dumper(@params);
+    if(!$VERBOSE && $params[0] eq 'debug') { 
+        return;
+    }
+    syslog($params[0], $params[1]);
+    #return syslog(@params);
+}
 while (<STDIN>) {
     chomp;
     
@@ -139,15 +154,21 @@ while (<STDIN>) {
         next;
     }
     elsif (length) {
-        syslog(warning => sprintf("warning: ignoring garbage: %.100s", $_));
+        my_syslog('warning', sprintf("warning: ignoring garbage: %.100s", $_));
         next;
+    }
+
+    $POSTFIX_QUEUE_ID = undef;
+    if(defined $attr{'queue_id'}) {
+        $POSTFIX_QUEUE_ID = $attr{'queue_id'};
     }
     
     if ($VERBOSE) {
         for (sort keys %attr) {
-            syslog(debug => "Attribute: %s=%s", $_ || '<UNKNOWN>', $attr{$_} || '<UNKNOWN>');
+            my_syslog('debug', sprintf("Attribute: %s=%s", $_ || '<UNKNOWN>', $attr{$_} || '<UNKNOWN>'));
         }
     };
+
     
     my $message_instance = $attr{instance};
     my $cache = defined($message_instance) ? $results_cache{$message_instance} ||= {} : {};
@@ -164,9 +185,7 @@ while (<STDIN>) {
         
         my %response = $handler_code->(attr => \%attr, cache => $cache);
 
-        if ($VERBOSE) {
-            syslog(debug => "$handler_name => " . Dumper(\%response));
-        }
+        my_syslog('debug', "$handler_name => " . Dumper(\%response));
 
         # $response is now : ( score => $_->{hit}, action => 'DUNNO' , state => 'IN_' . $_->{country} );
 
@@ -178,29 +197,23 @@ while (<STDIN>) {
         $cumulative_score += $response{score};
 
         if($cumulative_score > $max_score) {
-            if($VERBOSE) {
-                syslog(debug => "Score now > $max_score ... 550'ing");
-            }
+            my_syslog('debug', "Score now > $max_score ... 550'ing");
             $response{action} = "550";
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (e.g. SPF ambivient )
         push (@pretty_text, $response{state}) unless $response{state} eq '';
-        if($VERBOSE) {
-            #print Dumper(@pretty_text);
-            syslog(debug => "handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>');
-        };
+        my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
         if (%response and $response{action} !~ /^(?:DUNNO|PREPEND)/i) {
-            if ($VERBOSE) {
-                syslog(info => "handler %s: is decisive.", $handler_name || '<UNKNOWN>');
-            }
+            my_syslog('info', sprintf("handler %s: is decisive.", $handler_name || '<UNKNOWN>'));
             $action = $response{action};
             last;
         }
     }
     
-    syslog(info => "Policy action=%s, pretty text=%s", $action || '<UNKNOWN>', join(' ', @pretty_text));
+    my_syslog('info', sprintf("Policy action=%s, pretty text=%s", $action || '<UNKNOWN>', join(' ', @pretty_text)));
+    my_syslog('debug', "action=$action " . join('; ', @pretty_text));
     
     STDOUT->print("action=$action " . join('; ', @pretty_text). "\n\n");
     %attr = ();
@@ -268,14 +281,12 @@ sub sender_policy_framework {
             # probably due to invalid input data!
             my $errmsg = $@;
             $errmsg = $errmsg->text if UNIVERSAL::isa($@, 'Mail::SPF::Exception');
-                if ($VERBOSE) {
-                    syslog(
-                    info => "HELO check failed - Mail::SPF->new(%s, %s, %s) failed: %s",
-                    $attr->{client_address} || '<UNKNOWN>',
-                    $attr->{sender} || '<UNKNOWN>', $attr->{helo_name} || '<UNKNOWN>',
-                    $errmsg || '<UNKNOWN>'
-                    );
-                };
+            my_syslog('info', 
+                        sprintf("HELO check failed - Mail::SPF->new(%s, %s, %s) failed: %s", 
+                            $attr->{client_address} || '<UNKNOWN>', 
+                            $attr->{sender} || '<UNKNOWN>', 
+                            $attr->{helo_name} || '<UNKNOWN>', 
+                            $errmsg || '<UNKNOWN>'));
             return ( score => 0, action => 'DUNNO', state => 'HELO_SPF_FAIL' );
         }
         
@@ -288,45 +299,36 @@ sub sender_policy_framework {
         if $helo_result->is_code('fail');
     my $helo_spf_header     = $helo_result->received_spf_header;
     
-    if ($VERBOSE) {
-        syslog(
-            info => "SPF %s: HELO/EHLO: %s, IP Address: %s, Recipient: %s",
-            $helo_result  || '<UNKNOWN>',
-            $attr->{helo_name} || '<UNKNOWN>', $attr->{client_address} || '<UNKNOWN>',
-            $attr->{recipient} || '<UNKNOWN>'
-        );
-    };
+    my_syslog('info', sprintf("SPF %s: HELO/EHLO: %s, IP Address: %s, Recipient: %s",
+                $helo_result  || '<UNKNOWN>',
+                $attr->{helo_name} || '<UNKNOWN>', 
+                $attr->{client_address} || '<UNKNOWN>',
+                $attr->{recipient} || '<UNKNOWN>'));
     
     # Reject on HELO fail.  Defer on HELO temperror if message would otherwise
     # be accepted.  Use the HELO result and return for null sender.
     if ($helo_result->is_code('fail')) {
-        if ($VERBOSE) {
-            syslog(
-                info => "SPF %s: HELO/EHLO: %s",
+        my_syslog('info', sprintf("SPF %s: HELO/EHLO: %s",
                 $helo_result || '<UNKNOWN>',
-                $attr->{helo_name} || '<UNKNOWN>'
-            );
-        };
+            $attr->{helo_name} || '<UNKNOWN>'
+        ));
         return ( score => 0, action => "550", state => $helo_authority_exp );
     }
     elsif ($helo_result->is_code('temperror')) {
-        if ($VERBOSE) {
-            syslog(
-                info => "SPF %s: HELO/EHLO: %s",
+        my_syslog(
+            'info', sprintf("SPF %s: HELO/EHLO: %s",
                 $helo_result || '<UNKNOWN>',
                 $attr->{helo_name} || '<UNKNOWN>'
-            );
-        };
+            ));
+
         return ( score => 0, action => "DEFER_IF_PERMIT", state => "SPF-Result=$helo_local_exp" );
     }
     elsif ($attr->{sender} eq '') {
-        if ($VERBOSE) {
-            syslog(
-                info => "SPF %s: HELO/EHLO (Null Sender): %s",
-                $helo_result || '<UNKNOWN>',
-                $attr->{helo_name} || '<UNKNOWN>'
-            );
-        };
+        my_syslog('info',
+           sprintf("SPF %s: HELO/EHLO (Null Sender): %s",
+            $helo_result || '<UNKNOWN>',
+            $attr->{helo_name} || '<UNKNOWN>'
+        ));
         return ( score => 0, action => "PREPEND", state => $helo_spf_header ) 
             unless $cache->{added_spf_header}++;
     }
@@ -354,13 +356,10 @@ sub sender_policy_framework {
             # probably due to invalid input data!
             my $errmsg = $@;
             $errmsg = $errmsg->text if UNIVERSAL::isa($@, 'Mail::SPF::Exception');
-            if ($VERBOSE) {
-                syslog(
-                    info => "Mail From (sender) check failed - Mail::SPF->new(%s, %s, %s) failed: %s",
-                    $attr->{client_address} || '<UNKNOWN>',
-                    $attr->{sender} || '<UNKNOWN>', $attr->{helo_name} || '<UNKNOWN>', $errmsg || '<UNKNOWN>'
-                );
-            };
+            my_syslog('info', sprintf("Mail From (sender) check failed - Mail::SPF->new(%s, %s, %s) failed: %s",
+                $attr->{client_address} || '<UNKNOWN>',
+                $attr->{sender} || '<UNKNOWN>', $attr->{helo_name} || '<UNKNOWN>', $errmsg || '<UNKNOWN>'
+            ));
             return ( score => 0, action => 'DUNNO' , state => 'SPF_INTERNAL_ERROR' );
 
         } 
@@ -374,23 +373,18 @@ sub sender_policy_framework {
         if $mfrom_result->is_code('fail');
     my $mfrom_spf_header    = $mfrom_result->received_spf_header;
     
-    if ($VERBOSE) {
-        syslog(
-            info => "SPF %s: Envelope-from: %s, IP Address: %s, Recipient: %s",
+    my_syslog('info', sprintf("SPF %s: Envelope-from: %s, IP Address: %s, Recipient: %s",
             $mfrom_result || '<UNKNOWN>',
             $attr->{sender} || '<UNKNOWN>', $attr->{client_address} || '<UNKNOWN>',
             $attr->{recipient} || '<UNKNOWN>'
-        );
-    };
+        ));
     
     # Same approach as HELO....
-    if ($VERBOSE) {
-        syslog(
-            info => "SPF %s: Envelope-from: %s",
+    my_syslog('info', sprintf("SPF - %s: Envelope-from: %s",
             $mfrom_result || '<UNKNOWN>',
             $attr->{sender} || '<UNKNOWN>'
-        );
-    };
+        ));
+
     if ($mfrom_result->is_code('fail')) {
         return ( score => 0, action => "550", state => $mfrom_authority_exp );
     }
@@ -480,7 +474,7 @@ sub client_address_dnsbl {
             $hit_count += 1;
             $return .= " IN_" . $logname;
             $score += $answer->{userdata}{hit};
-            syslog('info' => "Hit in $answer->{domain} for $client_address ($logname)");
+            my_syslog('info', "Hit in $answer->{domain} for $client_address $logname");
         }
         else {
             $score += $answer->{userdata}{miss};
@@ -493,14 +487,12 @@ sub client_address_dnsbl {
     my $from = $attr{sender};
     my $to = $attr{recipient};
     if($score >= $dnsbl_threshold) {
-        syslog('info' => "550 DNS Blacklist hit ($score vs $dnsbl_threshold) for $from => $to; $return");
+        my_syslog('info', "550 DNS Blacklist hit ($score vs $dnsbl_threshold) for $from => $to; $return");
         return ( score => $score, action => "550", state => "DNSBL Hit(s). Your MTA IP address ($client_address) is blacklisted. Contact your IT support/server administrator");
     }
 
     if($hit_count == 0) {
-        if($VERBOSE) {
-            syslog('info' => "$DEFAULT_RESPONSE - No DNS Blacklist hits for $client_address, $from => $to");
-        }
+        my_syslog('info', "$DEFAULT_RESPONSE - No DNS Blacklist hits for $client_address, $from => $to");
         return ( score => 0, action => $DEFAULT_RESPONSE, state => 'DNSBL_FREE');
     }
     return ( score => $score, action => 'PREPEND', state => $return );
