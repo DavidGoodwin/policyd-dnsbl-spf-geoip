@@ -1,8 +1,12 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 
 # random rewrite of some of the code from policyd-weight and kind of merged with http://bazaar.launchpad.net/~kitterman/postfix-policyd-spf-perl/trunk/view/head:/postfix-policyd-spf-perl
 # DG, 2014/02/xx.
 # License: GPL v2 etc.
+
+use Cwd 'abs_path';
+use File::Basename;
+use lib dirname( abs_path $0 );
 
 use version; our $VERSION = qv('0.01');
 
@@ -74,7 +78,7 @@ my $DEFAULT_RESPONSE = 'DUNNO';
 my $syslog_socktype = 'unix'; # inet, unix, stream, console
 my $syslog_facility = 'mail';
 my $syslog_options  = 'pid';
-my $syslog_ident    = 'postfix/policy-test';
+my $syslog_ident    = 'postfix/policydpp';
 
 use constant localhost_addresses => map(
     NetAddr::IP->new($_),
@@ -83,7 +87,7 @@ use constant localhost_addresses => map(
 
 use constant relay_addresses => map(
     NetAddr::IP->new($_),
-    qw(  )
+    qw( 85.17.170.78 )
 ); # add addresses to qw (  ) above separated by spaces using CIDR notation.
 
 # Fully qualified hostname, if available, for use in authentication results
@@ -179,7 +183,7 @@ while (<STDIN>) {
             }
             $response{action} = "550";
         }
-
+        # should perhaps nuke @pretty_text if the rule returned 0 ? (e.g. SPF ambivient )
         push (@pretty_text, $response{state}) unless $response{state} eq '';
         if($VERBOSE) {
             #print Dumper(@pretty_text);
@@ -211,7 +215,7 @@ sub exempt_localhost {
     my $attr = $options{attr};
     if ($attr->{client_address} ne '') {
         my $client_address = NetAddr::IP->new($attr->{client_address});
-        return ( score => 0, action => "PREPEND", state =>  "Authentication-Results: $host; none (SPF not checked for localhost)")
+        return ( score => 0, action => "OK", state =>  "Authentication-Results: $host; none (SPF not checked for localhost)")
             if grep($_->contains($client_address), localhost_addresses);
     };
     return ( score => 0, action => 'DUNNO', state => '' ) ; # it's not localhost, so move on to another rule
@@ -226,7 +230,7 @@ sub exempt_relay {
     my $attr = $options{attr};
     if ($attr->{client_address} ne '') {
         my $client_address = NetAddr::IP->new($attr->{client_address});
-        return ( score => 0, action => "PREPEND", state => "Authentication-Results: $host; none (SPF not checked for whitelisted relay)" )
+        return ( score => 0, action => "OK", state => "Authentication-Results: $host; none (SPF not checked for whitelisted relay)" )
             if grep($_->contains($client_address), relay_addresses);
     };
     return ( score => 0, action => 'DUNNO', state => '') ; # it's not a whitelisted relay, so move on to another rule
@@ -409,9 +413,11 @@ sub client_address_geoip {
     # $attr{sender} $attr{recipient} $attr{client_address} $attr{helo_name}
 
     my @geoip_scores = (
-        { country => 'GB', hit => 1 },
-        { country => 'CN', hit => 1 },
-        { country => 'RU', hit => 1 },
+        { country => 'GB', hit => -1 },
+        { country => 'US', hit => -1 },
+        { country => 'CN', hit => -1 },
+        { country => 'RU', hit => 2 },
+        { country => 'IN', hit => 2 },
     );
 
     our $geoip = Geo::IP->new(GEOIP_STANDARD);
@@ -442,7 +448,7 @@ sub client_address_dnsbl {
             { hit => 3.25, miss => 0, logname => 'PLB_SPAMHAUS' }, 
              type => 'normal' },
         { domain => 'sbl-xbl.spamhaus.org', userdata => 
-            { hit => 3.25, miss => 0, logname => 'SBL_SPAMHAUS' }, 
+            { hit => 6.25, miss => 0, logname => 'SBL_XBL_SPAMHAUS' }, 
             type => 'normal' },
         { domain => 'bl.spamcop.net', userdata => 
             { hit => 3.25, miss => 0, logname => 'SPAMCOP' }, 
@@ -474,7 +480,7 @@ sub client_address_dnsbl {
             $hit_count += 1;
             $return .= " IN_" . $logname;
             $score += $answer->{userdata}{hit};
-            syslog('info' => "Hit in $answer->{domain} for $client_address $logname");
+            syslog('info' => "Hit in $answer->{domain} for $client_address ($logname)");
         }
         else {
             $score += $answer->{userdata}{miss};
