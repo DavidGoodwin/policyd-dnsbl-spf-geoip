@@ -12,22 +12,22 @@ This code is loosely based on :
  * http://bazaar.launchpad.net/~kitterman/postfix-policyd-spf-perl/trunk/files  (basic structure, SPF checks)
  * and https://github.com/palepurple/policyd-weight (black lists, geoip checks)
 
-
 ## License 
 
 GPL v2
 
 ## What it does 
 
-
  * Check SMTP envelope headers for SPF confirmity. 
  * Check DNS Blacklists for the Client IP address (i.e. the IP sending mail to us)
  * Perform GeoIP scoring (client ip addr)
 
-It doesn't (yet) do anything with the helo, unlike policyd-weight, as this seems to trigger too many false positives.
+It doesn't (yet) do much with the helo (unless this is involved with the SPF check). 
+Policyd-weight had helo checks, but these prooved to be problematic from a support point of view (false positives).
 
- 1. It has a list of DNS Blacklists each with varying score/weightings
- 2. We undertake checks against the Blacklists
+ 0. Ignore localhost or whitelisted entities.
+ 1. Check SPF stuff
+ 1. Perform DNS Blacklists checks on the client IP - each has varying score/weightings. Reject if total_score > threshold 
  3. Perform a GeoIP check, if e.g. it's from Nigeria, then perhaps we score it slightly higher than if it's from GB. 
  4. If the total score is > a threshold, again, reject it.
 
@@ -45,7 +45,7 @@ master.cf:
 
 ```
  policyName  unix  -       n       n       -       0       spawn
-    user=nobody argv=/path/to//policyd.pl
+    user=nobody argv=/path/to/policyd.pl
 ```
 
 main.cf:
@@ -62,8 +62,11 @@ Not yet very automated; read/edit src/policyd.pl as necessary.
 
 ## Tests 
 
+```
 cd tests
 sh whatever.sh
+```
+
 
 ## Other relevant links
 
