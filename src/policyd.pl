@@ -65,7 +65,8 @@ my @HANDLERS = (
     },
 );
 
-my $VERBOSE = 1;
+# trying to figure out what's going on? change this to 1.
+my $VERBOSE = 0;
 
 my $DEFAULT_RESPONSE = 'DUNNO';
 
@@ -201,7 +202,7 @@ while (<STDIN>) {
             $response{action} = "550";
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (e.g. SPF ambivient )
-        push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: neutral/; # hacky.
+        push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none)/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
@@ -308,27 +309,12 @@ sub sender_policy_framework {
     # Reject on HELO fail.  Defer on HELO temperror if message would otherwise
     # be accepted.  Use the HELO result and return for null sender.
     if ($helo_result->is_code('fail')) {
-        my_syslog('info', sprintf("SPF %s: HELO/EHLO: %s",
-                $helo_result || '<UNKNOWN>',
-            $attr->{helo_name} || '<UNKNOWN>'
-        ));
         return ( score => 0, action => "550", state => $helo_authority_exp );
     }
     elsif ($helo_result->is_code('temperror')) {
-        my_syslog(
-            'info', sprintf("SPF %s: HELO/EHLO: %s",
-                $helo_result || '<UNKNOWN>',
-                $attr->{helo_name} || '<UNKNOWN>'
-            ));
-
         return ( score => 0, action => "DEFER_IF_PERMIT", state => "SPF-Result=$helo_local_exp" );
     }
     elsif ($attr->{sender} eq '') {
-        my_syslog('info',
-           sprintf("SPF %s: HELO/EHLO (Null Sender): %s",
-            $helo_result || '<UNKNOWN>',
-            $attr->{helo_name} || '<UNKNOWN>'
-        ));
         return ( score => 0, action => "PREPEND", state => $helo_spf_header ) 
             unless $cache->{added_spf_header}++;
     }
@@ -373,18 +359,12 @@ sub sender_policy_framework {
         if $mfrom_result->is_code('fail');
     my $mfrom_spf_header    = $mfrom_result->received_spf_header;
     
-    my_syslog('info', sprintf("SPF %s: Envelope-from: %s, IP Address: %s, Recipient: %s",
+    my_syslog('debug', sprintf("SPF %s: Envelope-from: %s, IP Address: %s, Recipient: %s",
             $mfrom_result || '<UNKNOWN>',
             $attr->{sender} || '<UNKNOWN>', $attr->{client_address} || '<UNKNOWN>',
             $attr->{recipient} || '<UNKNOWN>'
         ));
     
-    # Same approach as HELO....
-    my_syslog('info', sprintf("SPF - %s: Envelope-from: %s",
-            $mfrom_result || '<UNKNOWN>',
-            $attr->{sender} || '<UNKNOWN>'
-        ));
-
     if ($mfrom_result->is_code('fail')) {
         return ( score => 0, action => "550", state => $mfrom_authority_exp );
     }
@@ -474,7 +454,7 @@ sub client_address_dnsbl {
             $hit_count += 1;
             $return .= " IN_" . $logname;
             $score += $answer->{userdata}{hit};
-            my_syslog('info', "Hit in $answer->{domain} for $client_address $logname");
+            my_syslog('debug', "Hit in $answer->{domain} for $client_address $logname");
         }
         else {
             $score += $answer->{userdata}{miss};
@@ -488,11 +468,11 @@ sub client_address_dnsbl {
     my $to = $attr{recipient};
     if($score >= $dnsbl_threshold) {
         my_syslog('info', "550 DNS Blacklist hit ($score vs $dnsbl_threshold) for $from => $to; $return");
-        return ( score => $score, action => "550", state => "DNSBL Hit(s). Your MTA IP address ($client_address) is blacklisted. Contact your IT support/server administrator");
+        return ( score => $score, action => "550", state => "DNSBL Hit(s). Your MTA IP address ($client_address) is blacklisted. Contact your IT support/server administrator. $return");
     }
 
     if($hit_count == 0) {
-        my_syslog('info', "$DEFAULT_RESPONSE - No DNS Blacklist hits for $client_address, $from => $to");
+        my_syslog('debug', "$DEFAULT_RESPONSE - No DNS Blacklist hits for $client_address, $from => $to");
         return ( score => 0, action => $DEFAULT_RESPONSE, state => 'DNSBL_FREE');
     }
     return ( score => $score, action => 'PREPEND', state => $return );
