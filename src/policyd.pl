@@ -135,9 +135,9 @@ my $POSTFIX_QUEUE_ID = undef;
 sub my_syslog {
     # Args: log type, message.
     my (@params) = @_; 
-    if(defined $params[1] && defined($POSTFIX_QUEUE_ID)) {
-        $params[1] = $params[1]. " log_id:$POSTFIX_QUEUE_ID ";
-    }
+    #if(defined $params[1] && defined($POSTFIX_QUEUE_ID)) {
+    #    $params[1] = $params[1]. " log_id:$POSTFIX_QUEUE_ID ";
+    #}
     #print Dumper(@params);
     if(!$VERBOSE && $params[0] eq 'debug') { 
         return;
@@ -163,11 +163,11 @@ while (<STDIN>) {
         $POSTFIX_QUEUE_ID = $attr{'queue_id'};
     }
     
-    if ($VERBOSE) {
-        for (sort keys %attr) {
-            my_syslog('debug', sprintf("Attribute: %s=%s", $_ || '<UNKNOWN>', $attr{$_} || '<UNKNOWN>'));
-        }
-    };
+    #if ($VERBOSE) {
+    #    for (sort keys %attr) {
+    #        my_syslog('debug', sprintf("Attribute: %s=%s", $_ || '<UNKNOWN>', $attr{$_} || '<UNKNOWN>'));
+    #    }
+    #};
 
     
     my $message_instance = $attr{instance};
@@ -201,7 +201,7 @@ while (<STDIN>) {
             $response{action} = "550";
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (e.g. SPF ambivient )
-        push (@pretty_text, $response{state}) unless $response{state} eq '';
+        push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: neutral/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
