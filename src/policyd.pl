@@ -12,7 +12,7 @@
 use NetAddr::IP;
 use constant relay_addresses => map(
     NetAddr::IP->new($_),
-    qw( 85.17.170.78 )
+    qw( 85.17.170.78 188.227.240.107 89.16.183.188 )
 ); # add addresses to qw (  ) above separated by spaces using CIDR notation.
 
 
@@ -206,7 +206,7 @@ while (<STDIN>) {
 
         # Return back whatever is not DUNNO
         if (%response and $response{action} !~ /^(?:DUNNO|PREPEND)/i) {
-            my_syslog('info', sprintf("handler %s: is decisive.", $handler_name || '<UNKNOWN>'));
+            my_syslog('debug', sprintf("handler %s: is decisive.", $handler_name || '<UNKNOWN>'));
             $action = $response{action};
             last;
         }
