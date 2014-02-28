@@ -217,9 +217,6 @@ while (<STDIN>) {
     
     STDOUT->print("action=$action " . join('; ', @pretty_text). "\n\n");
 
-    if($action eq '550') {
-        $file_cache->set($cache_key, 1);
-    }
     %attr = ();
 }
 
@@ -421,24 +418,13 @@ sub client_address_dnsbl {
     # $attr{sender} $attr{recipient} $attr{client_address} $attr{helo_name}
 
     my @dns_bls = [
-        { domain => 'pbl.spamhaus.org', userdata => 
-            { hit => 3.25, miss => 0, logname => 'PLB_SPAMHAUS' }, 
-             type => 'normal' },
-        { domain => 'sbl-xbl.spamhaus.org', userdata => 
-            { hit => 6.25, miss => 0, logname => 'SBL_XBL_SPAMHAUS' }, 
-            type => 'normal' },
-        { domain => 'bl.spamcop.net', userdata => 
-            { hit => 3.25, miss => 0, logname => 'SPAMCOP' }, 
-            type => 'normal' },
-        { domain => 'dnsbl.sorbs.net', userdata => 
-            { hit => 3.25, miss => 0, logname => 'SORBS' }, 
-            type => 'normal' },
-        { domain => 'ix.dnsbl.manitu.net', userdata => 
-            { hit => 3.25, miss => 0, logname => 'IX_MANITU' }, 
-            type => 'normal' },
-        { domain => 'tor.ahnl.org', userdata => 
-            { hit => 3.25, miss => 0, logname => 'AHNL_TOR' }, 
-            type => 'normal' },
+        { domain => 'zen.spamhaus.org',     userdata => { hit => 3.25, miss => 0, logname => 'ZEN_SPAMHAUS' 	}, type => 'normal' },
+        #{ domain => 'sbl-xbl.spamhaus.org', userdata => { hit => 6.25, miss => 0, logname => 'SBL_XBL_SPAMHAUS' }, type => 'normal' },
+        { domain => 'truncate.gbudb.net',   userdata => { hit => 3.0,  miss => 0, logname => 'TRUNCATE_GBUDB'   }, type => 'normal' },
+        { domain => 'bl.spamcop.net',       userdata => { hit => 3.25, miss => 0, logname => 'SPAMCOP' 		}, type => 'normal' },
+        { domain => 'dnsbl.sorbs.net', 	    userdata => { hit => 3.25, miss => 0, logname => 'SORBS' 		}, type => 'normal' },
+        { domain => 'ix.dnsbl.manitu.net',  userdata => { hit => 3.25, miss => 0, logname => 'IX_MANITU' 	}, type => 'normal' },
+        { domain => 'tor.ahnl.org', 	    userdata => { hit => 3.25, miss => 0, logname => 'AHNL_TOR' 	}, type => 'normal' },
     ];
 
     my $bl_client = Net::DNSBL::Client->new({timeout => 1, resolver => $resolver});
@@ -469,8 +455,13 @@ sub client_address_dnsbl {
     # should we return DUNNO if there's some sort of error condition?
     my $from = $attr{sender};
     my $to = $attr{recipient};
+    my $cache_key = $attr{client_address};
+
     if($score >= $dnsbl_threshold) {
         my_syslog('info', "550 DNS Blacklist hit ($score vs $dnsbl_threshold) for $from => $to; $return");
+
+        # Cache the IP as evil.
+        $file_cache->set($cache_key, 1);
         return ( score => $score, action => "550", state => "DNSBL Hit(s). Your MTA IP address ($client_address) is blacklisted. Contact your IT support/server administrator. $return");
     }
 
