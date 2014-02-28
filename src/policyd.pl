@@ -177,7 +177,7 @@ while (<STDIN>) {
     my $cache_key = $attr{client_address};
 
     if($file_cache->get($cache_key)) {
-        STDOUT->print("action=550 REJECTED due to temporary blacklisting of your IP (previous errors triggere this)\n\n"); 
+        STDOUT->print("action=550 DNS Blacklisted. REJECTED due to previous hits \n\n"); 
         exit(0);
     }
 
