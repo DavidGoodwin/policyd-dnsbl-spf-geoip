@@ -1,27 +1,43 @@
 #!/usr/bin/perl -w
 
-# random rewrite of some of the code from policyd-weight and kind of merged with http://bazaar.launchpad.net/~kitterman/postfix-policyd-spf-perl/trunk/view/head:/postfix-policyd-spf-perl
-# DG, 2014/02/xx.
-# License: GPL v2 etc.
+# Basic policy daemon suitable for use under Postfix.
+# See README.md in the root of this project.
+# Author: Pale Purple Ltd <david-@-palepurple.co.uk>, 2014/02/xx.
+# License: GPL v2 , see LICENSE.txt file.
+
+# Notes:
+# 1. You need/MUST edit the list of relay hosts (see relay_addresses constant below)
+# 2. You probably want to edit the list of DNS Blacklists in use (see client_address_dnsbl subroutine below).
+
+use NetAddr::IP;
+use constant relay_addresses => map(
+    NetAddr::IP->new($_),
+    qw( 85.17.170.78 )
+); # add addresses to qw (  ) above separated by spaces using CIDR notation.
+
 
 use Cwd 'abs_path';
 use File::Basename;
 use lib dirname( abs_path $0 );
 
-use version; our $VERSION = qv('0.01');
+use version; our $VERSION = qv('1.00');
 
 use strict;
 
+# Net::DNSBL::Client (seems uninstallable through CPAN/Debian; hence manual inclusion)
 require "Client.pm";
 
 use IO::Handle;
 use Sys::Syslog qw(:DEFAULT setlogsock);
-use NetAddr::IP;
 use Mail::SPF;
 use Sys::Hostname::Long 'hostname_long';
 #use Net::DNSBL::Client;
+
 use Data::Dumper;
 use Geo::IP;
+
+# If 550 someone via the DNSBL, then we cache it and quickly ignore them in the future.
+use File::Cache;
 
 # ----------------------------------------------------------
 #                      configuration
@@ -41,55 +57,37 @@ my $spf_server = Mail::SPF::Server->new(
     default_authority_explanation  => 'Please see http://www.openspf.net/Why?s=%{_scope};id=%{S};ip=%{C};r=%{R}'
 );
 
-# Adding more handlers is easy:
+# List of functions/handlers to run for each policy request; 
+# they're run in order. We need to exclude relay hosts or the local server 
+# as they'll generally fail on SPF checks and it's a waste of resources.
 my @HANDLERS = (
-    {
-        name => 'exempt_localhost',
-        code => \&exempt_localhost
-    },
-    {
-        name => 'exempt_relay',
-        code => \&exempt_relay
-    },
-    {
-        name => 'sender_policy_framework',
-        code => \&sender_policy_framework
-    },
-    {
-        name => 'client_address_dnsbl',
-        code => \&client_address_dnsbl
-    },
-    {
-        name => 'client_address_geoip',
-        code => \&client_address_geoip
-    },
+    { name => 'exempt_localhost', code => \&exempt_localhost },
+    { name => 'exempt_relay', code => \&exempt_relay },
+    { name => 'sender_policy_framework', code => \&sender_policy_framework },
+    { name => 'client_address_dnsbl', code => \&client_address_dnsbl },
+    { name => 'client_address_geoip', code => \&client_address_geoip },
 );
 
-# trying to figure out what's going on? change this to 1.
+# This will make the script far more verbose. Change this to 1.
+# Otherwise we only log info & warning things and NOT debug.
+# See my_syslog()
 my $VERBOSE = 0;
 
 my $DEFAULT_RESPONSE = 'DUNNO';
 
-#
 # Syslogging options for verbose mode and for fatal errors.
 # NOTE: comment out the $syslog_socktype line if syslogging does not
 # work on your system.
-#
-
 my $syslog_socktype = 'unix'; # inet, unix, stream, console
 my $syslog_facility = 'mail';
 my $syslog_options  = 'pid';
+# The name we appear in syslog under. 
 my $syslog_ident    = 'postfix/policydpp';
 
 use constant localhost_addresses => map(
     NetAddr::IP->new($_),
     qw(  127.0.0.0/8  ::ffff:127.0.0.0/104  ::1  )
 );  # Does Postfix ever say "client_address=::ffff:<ipv4-address>"?
-
-use constant relay_addresses => map(
-    NetAddr::IP->new($_),
-    qw( 85.17.170.78 )
-); # add addresses to qw (  ) above separated by spaces using CIDR notation.
 
 # Fully qualified hostname, if available, for use in authentication results
 # headers now provided by the localhost and whitelist checks.
@@ -100,6 +98,9 @@ my %results_cache;  # by message instance
 # ----------------------------------------------------------
 #                      initialization
 # ----------------------------------------------------------
+
+
+my $file_cache = new File::Cache( { namespace => 'policyd', expires_in => 86400, username => 'policyd', filemode => 0600, cache_depth => 3 } );
 
 #
 # Log an error and abort.
@@ -131,14 +132,10 @@ openlog($syslog_ident, $syslog_options, $syslog_facility);
 # Receive a bunch of attributes, evaluate the policy, send the result.
 #
 my %attr;
-my $POSTFIX_QUEUE_ID = undef;
 
 sub my_syslog {
     # Args: log type, message.
     my (@params) = @_; 
-    #if(defined $params[1] && defined($POSTFIX_QUEUE_ID)) {
-    #    $params[1] = $params[1]. " log_id:$POSTFIX_QUEUE_ID ";
-    #}
     #print Dumper(@params);
     if(!$VERBOSE && $params[0] eq 'debug') { 
         return;
@@ -159,10 +156,6 @@ while (<STDIN>) {
         next;
     }
 
-    $POSTFIX_QUEUE_ID = undef;
-    if(defined $attr{'queue_id'}) {
-        $POSTFIX_QUEUE_ID = $attr{'queue_id'};
-    }
     
     #if ($VERBOSE) {
     #    for (sort keys %attr) {
@@ -180,12 +173,18 @@ while (<STDIN>) {
     my $max_score = 6; # above this, we force 550 response
     my @pretty_text ;
 
+    # Create Cache key based on sender ip addr?
+    my $cache_key = $attr{client_address};
+
+    if($file_cache->get($cache_key)) {
+        STDOUT->print("action=550 REJECTED due to temporary blacklisting of your IP (previous errors triggere this)\n\n"); 
+        exit(0);
+    }
+
     foreach my $handler (@HANDLERS) {
         my $handler_name = $handler->{name};
         my $handler_code = $handler->{code};
-        
         my %response = $handler_code->(attr => \%attr, cache => $cache);
-
         my_syslog('debug', "$handler_name => " . Dumper(\%response));
 
         # $response is now : ( score => $_->{hit}, action => 'DUNNO' , state => 'IN_' . $_->{country} );
@@ -201,7 +200,7 @@ while (<STDIN>) {
             my_syslog('debug', "Score now > $max_score ... 550'ing");
             $response{action} = "550";
         }
-        # should perhaps nuke @pretty_text if the rule returned 0 ? (e.g. SPF ambivient )
+        # should perhaps nuke @pretty_text if the rule returned 0 ? (SPF data muted if it makes no difference.)
         push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none)/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
@@ -217,6 +216,10 @@ while (<STDIN>) {
     my_syslog('debug', "action=$action " . join('; ', @pretty_text));
     
     STDOUT->print("action=$action " . join('; ', @pretty_text). "\n\n");
+
+    if($action eq '550') {
+        $file_cache->set($cache_key, 1);
+    }
     %attr = ();
 }
 
