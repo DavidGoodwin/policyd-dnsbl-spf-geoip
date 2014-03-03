@@ -419,7 +419,7 @@ sub client_address_dnsbl {
     # $attr{sender} $attr{recipient} $attr{client_address} $attr{helo_name}
 
     my @dns_bls = [
-        { domain => 'zen.spamhaus.org',     userdata => { hit => 3.25, miss => 0, logname => 'ZEN_SPAMHAUS' 	}, type => 'normal' },
+        { domain => 'zen.spamhaus.org',     userdata => { hit => 6.25, miss => 0, logname => 'ZEN_SPAMHAUS' 	}, type => 'normal' },
         #{ domain => 'sbl-xbl.spamhaus.org', userdata => { hit => 6.25, miss => 0, logname => 'SBL_XBL_SPAMHAUS' }, type => 'normal' },
         { domain => 'truncate.gbudb.net',   userdata => { hit => 3.0,  miss => 0, logname => 'TRUNCATE_GBUDB'   }, type => 'normal' },
         { domain => 'bl.spamcop.net',       userdata => { hit => 3.25, miss => 0, logname => 'SPAMCOP' 		}, type => 'normal' },
