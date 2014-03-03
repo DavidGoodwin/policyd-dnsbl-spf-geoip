@@ -66,6 +66,7 @@ my @HANDLERS = (
     { name => 'sender_policy_framework', code => \&sender_policy_framework },
     { name => 'client_address_dnsbl', code => \&client_address_dnsbl },
     { name => 'client_address_geoip', code => \&client_address_geoip },
+    { name => 'client_address_rhsbl', code => \&client_address_rhsbl },
 );
 
 # This will make the script far more verbose. Change this to 1.
@@ -468,6 +469,73 @@ sub client_address_dnsbl {
     if($hit_count == 0) {
         my_syslog('debug', "$DEFAULT_RESPONSE - No DNS Blacklist hits for $client_address, $from => $to");
         return ( score => 0, action => $DEFAULT_RESPONSE, state => 'DNSBL_FREE');
+    }
+    return ( score => $score, action => 'PREPEND', state => $return );
+}
+
+
+sub client_address_rhsbl {
+    # An observant reader would notice there's a big duplication between this function and 
+    # client_address_dnsbl with only about 4 things changing:
+    # 1. The Net::DNSBL::Client call (query_domain)
+    # 2. The return value(s) referencing RHSBL
+    # 3. The cache key(s)
+    # 4. The blacklist(s) to check.
+    # Patches welcome.
+
+    my %options = @_;
+    my $attr    = $options{attr};
+    # $attr{sender} $attr{recipient} $attr{client_address} $attr{helo_name}
+    # take $attr{sender} and chop off the stuff before and including the @.
+    my ($crap,$sender_domain) = split('@', $attr{sender}, 2);
+    my $cache_key = "rhsbl" . $sender_domain;
+
+    if($file_cache->get($cache_key)) {
+        return ( score => 10, action => "550", state => "RHSBL Hits (cached)");
+    }
+    my @sender_domain_blacklists = [
+        { domain => 'excommunicado.co.uk',     userdata => { hit => 6.1, miss => 0, logname => 'EXOMMUNICADO'   }, type => 'normal' },
+    ];
+
+    my $bl_client = Net::DNSBL::Client->new({timeout => 1, resolver => $resolver});
+    my $ok = $bl_client->query_domain($sender_domain, @sender_domain_blacklists, {return_all => 1});
+    my $answers = $bl_client->get_answers();
+    my $return = '';
+    my $score = 0;
+    my $threshold = 6.00;
+    my $hit_count = 0;
+    #print Dumper(@$answers);
+
+    foreach my $answer (@$answers) {
+        my $logname = $answer->{userdata}{logname};
+        if($answer->{hit} == 1) {
+            $hit_count += 1;
+            $return .= " IN_" . $logname;
+            $score += $answer->{userdata}{hit};
+            my_syslog('debug', "Hit in $answer->{domain} for $sender_domain $logname");
+        }
+        else {
+            $score += $answer->{userdata}{miss};
+        }
+    }
+
+    # return ( score => $_->{hit}, action => 'DUNNO' , state => 'Textual Desc Of State IN_' . $_->{country} );
+
+    # should we return DUNNO if there's some sort of error condition?
+    my $from = $attr{sender};
+    my $to = $attr{recipient};
+
+    if($score >= $threshold) {
+        my_syslog('info', "550 RHBL Blacklist hit ($score vs $threshold) for $sender_domain / $from => $to; $return");
+
+        # Cache the IP as evil.
+        $file_cache->set($cache_key, 1);
+        return ( score => $score, action => "550", state => "RHSBL Hit(s). Your sender domain ($sender_domain) is blacklisted. Contact your IT support/server administrator. $return");
+    }
+
+    if($hit_count == 0) {
+        my_syslog('debug', "$DEFAULT_RESPONSE - No RHBL/DNS Blacklist hits for $sender_domain, $from => $to");
+        return ( score => 0, action => $DEFAULT_RESPONSE, state => 'RHDNSBL_FREE');
     }
     return ( score => $score, action => 'PREPEND', state => $return );
 }
