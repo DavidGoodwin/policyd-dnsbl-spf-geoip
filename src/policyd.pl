@@ -202,7 +202,7 @@ while (<STDIN>) {
             $response{action} = "550";
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (SPF data muted if it makes no difference.)
-        push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none)/; # hacky.
+        push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none|softfail)/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
@@ -487,14 +487,20 @@ sub client_address_rhsbl {
     my $attr    = $options{attr};
     # $attr{sender} $attr{recipient} $attr{client_address} $attr{helo_name}
     # take $attr{sender} and chop off the stuff before and including the @.
+    if ( $attr{sender} eq "" || $attr{sender} !~ /@/ ) {
+        my_syslog('debug', 'attr{sender} empty; cannot process');
+        return ( score => 0, action => "DUNNO", state => "No sender address present, can't perform RHSBL check(s)" );
+    }
+
     my ($crap,$sender_domain) = split('@', $attr{sender}, 2);
+
     my $cache_key = "rhsbl" . $sender_domain;
 
     if($file_cache->get($cache_key)) {
-        return ( score => 10, action => "550", state => "RHSBL Hits (cached)");
+        return ( score => 10, action => "550", state => "RHSBL Hits (cached) (IN_EXCOMMUNICADO)"); # lazy hack until we cache things properly, given there's only one BL atm
     }
     my @sender_domain_blacklists = [
-        { domain => 'excommunicado.co.uk',     userdata => { hit => 6.1, miss => 0, logname => 'EXOMMUNICADO'   }, type => 'normal' },
+        { domain => 'excommunicado.co.uk',     userdata => { hit => 6.1, miss => 0, logname => 'EXCOMMUNICADO'   }, type => 'normal' },
     ];
 
     my $bl_client = Net::DNSBL::Client->new({timeout => 1, resolver => $resolver});
