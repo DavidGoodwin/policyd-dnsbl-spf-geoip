@@ -1,0 +1,26 @@
+echo "ccert_fingerprint=
+ccert_issuer=
+ccert_pubkey_fingerprint=
+ccert_subject=
+client_address=88.98.39.221
+client_name=mailrelay.winfields.co.uk
+encryption_cipher=AES128-SHA
+encryption_keysize=128
+encryption_protocol=TLSv1
+etrn_domain=
+helo_name=mailrelay.winfields.co.uk
+instance=26d3.5315b65a.133b9.0
+protocol_name=ESMTP
+protocol_state=RCPT
+queue_id=
+recipient=
+recipient_count=
+request=smtpd_access_policy
+reverse_client_name=mailrelay.winfields.co.uk
+sasl_method=
+sasl_sender=
+sasl_username=
+sender=invoicemail@bollingroup.com
+size=4580
+stress=yes
+" | perl -I ../src/ -w ../src/policyd.pl
