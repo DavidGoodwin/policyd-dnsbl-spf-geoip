@@ -15,6 +15,7 @@ use constant relay_addresses => map(
     qw( 85.17.170.78 188.227.240.107 89.16.183.188 )
 ); # add addresses to qw (  ) above separated by spaces using CIDR notation.
 
+use Getopt::Std;
 
 use Cwd 'abs_path';
 use File::Basename;
@@ -50,12 +51,37 @@ my $resolver = Net::DNS::Resolver->new(
 );
 
 # query_rr_type_all will query both type TXT and type SPF. This upstream
-# default is changed due to there being essentiall no type SPF deployment.
+# default is changed due to there being essentially no type SPF deployment.
+# query_rr_type_txt - TXT type RRs only.
+# query_rr_type_all - TXT and  SPF type RRs
+# query_rr_type_spf - SPF type RRs only.
 my $spf_server = Mail::SPF::Server->new(
     dns_resolver    => $resolver,
-    query_rr_types  => Mail::SPF::Server->query_rr_type_txt,
+    query_rr_types  => Mail::SPF::Server->query_rr_type_all,
     default_authority_explanation  => 'Please see http://www.openspf.net/Why?s=%{_scope};id=%{S};ip=%{C};r=%{R}'
 );
+
+# This will make the script far more verbose. Change this to 1.
+# Otherwise we only log info & warning things and NOT debug.
+# See my_syslog()
+my $VERBOSE = 0;
+my $DEBUG = 0;
+
+# -d = Debug.
+# -h = help
+my %cmdline_options = ( 'h' => 0, 'd' => 0 );
+
+getopts('hd', \%cmdline_options);
+
+if($cmdline_options{'d'} eq '1') {
+    $VERBOSE = 1;
+    $DEBUG = 1;
+}
+
+if($cmdline_options{'h'} eq '1') {
+    print " Usage : $0  -d => debug, -h => help \n";
+    exit(0);
+}
 
 # List of functions/handlers to run for each policy request; 
 # they're run in order. We need to exclude relay hosts or the local server 
@@ -69,10 +95,6 @@ my @HANDLERS = (
     { name => 'client_address_rhsbl', code => \&client_address_rhsbl },
 );
 
-# This will make the script far more verbose. Change this to 1.
-# Otherwise we only log info & warning things and NOT debug.
-# See my_syslog()
-my $VERBOSE = 0;
 
 my $DEFAULT_RESPONSE = 'DUNNO';
 
@@ -138,6 +160,10 @@ sub my_syslog {
     # Args: log type, message.
     my (@params) = @_; 
     #print Dumper(@params);
+    if($DEBUG) {
+        print $params[0] . " " . $params[1] . "\n";
+    }
+
     if(!$VERBOSE && $params[0] eq 'debug') { 
         return;
     }
@@ -203,6 +229,7 @@ while (<STDIN>) {
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (SPF data muted if it makes no difference.)
         push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none|softfail)/; # hacky.
+        push (@pretty_text, 'SPF_SOFTFAIL') if $response{state} =~ /Received-SPF: softfail/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
@@ -331,6 +358,7 @@ sub sender_policy_framework {
         
         my $mfrom_request = eval {
             Mail::SPF::Request->new(
+                versions        => [1,2],
                 scope           => 'mfrom',
                 identity        => $attr->{sender},
                 ip_address      => $attr->{client_address},
