@@ -45,6 +45,7 @@ The code currently implements simplisitc caching for :
  * Copy the src/policyd.pl script to somewhere useful.
  * Try and install Net::DNS::BL, if you can't use Client.pm bundled.
  * Install File::Cache or libfile-cache-perl [Debian] 
+ * You'll probably need libnetaddr-ip-perl libmail-spf-perl libsys-hostname-long-perl libgeo-ip-perl libfile-cache-perl [Debian]
  * Edit /etc/postfix/master.cf (see below).
  * Edit /etc/postfix/main.cf (see below) to cause the policy daemon to be used.
  * Check syslog & /var/log/mail.log to see what's going on....
