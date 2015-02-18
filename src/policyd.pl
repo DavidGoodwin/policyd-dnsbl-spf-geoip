@@ -229,7 +229,7 @@ while (<STDIN>) {
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (SPF data muted if it makes no difference.)
         push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none|softfail)/; # hacky.
-        push (@pretty_text, 'SPF_SOFTFAIL') if $response{state} =~ /Received-SPF: softfail/; # hacky.
+        push (@pretty_text, 'SPF_SOFTFAIL ' . $response{state} ) if $response{state} =~ /Received-SPF: softfail/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
