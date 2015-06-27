@@ -313,7 +313,7 @@ sub sender_policy_framework {
         return ( score => 0, action => "550", state => $helo_authority_exp );
     }
     elsif ($helo_result->is_code('temperror')) {
-        return ( score => 0, action => "DEFER_IF_PERMIT", state => "SPF-Result=$helo_local_exp" );
+        return ( score => 0, action => "DUNNO", state => "SPF-Result=$helo_local_exp" );
     }
     elsif ($attr->{sender} eq '') {
         return ( score => 0, action => "PREPEND", state => $helo_spf_header ) 
