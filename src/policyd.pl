@@ -453,6 +453,8 @@ sub client_address_dnsbl {
         { domain => 'bl.spamcop.net',       userdata => { hit => 3.25, miss => 0, logname => 'SPAMCOP' 		}, type => 'normal' },
         { domain => 'dnsbl.sorbs.net', 	    userdata => { hit => 3.25, miss => 0, logname => 'SORBS' 		}, type => 'normal' },
         { domain => 'ix.dnsbl.manitu.net',  userdata => { hit => 3.25, miss => 0, logname => 'IX_MANITU' 	}, type => 'normal' },
+	# you need to register to use barracuda ... see http://www.barracudacentral.org/rbl/
+        { domain => 'b.barracudacentral.org',  userdata => { hit => 3.25, miss => 0, logname => 'BARRACUDA' 	}, type => 'normal' },
         { domain => 'tor.ahnl.org', 	    userdata => { hit => 3.25, miss => 0, logname => 'AHNL_TOR' 	}, type => 'normal' },
     ];
 
