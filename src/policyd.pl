@@ -455,6 +455,8 @@ sub client_address_dnsbl {
         { domain => 'ix.dnsbl.manitu.net',  userdata => { hit => 3.25, miss => 0, logname => 'IX_MANITU' 	}, type => 'normal' },
 	# you need to register to use barracuda ... see http://www.barracudacentral.org/rbl/
         { domain => 'b.barracudacentral.org',  userdata => { hit => 3.25, miss => 0, logname => 'BARRACUDA' 	}, type => 'normal' },
+        { domain => 'bl.spameatingmonkey.net',  userdata => { hit => 1.25, miss => 0, logname => 'SPAMEATINGMONKEY' 	}, type => 'normal' },
+        { domain => 'bl.mailspike.net',  userdata => { hit => 1.25, miss => 0, logname => 'MAILSPIKE' 	}, type => 'normal' },
         { domain => 'tor.ahnl.org', 	    userdata => { hit => 3.25, miss => 0, logname => 'AHNL_TOR' 	}, type => 'normal' },
     ];
 
