@@ -451,6 +451,7 @@ sub client_address_dnsbl {
         #{ domain => 'sbl-xbl.spamhaus.org', userdata => { hit => 6.25, miss => 0, logname => 'SBL_XBL_SPAMHAUS' }, type => 'normal' },
         { domain => 'truncate.gbudb.net',   userdata => { hit => 3.0,  miss => 0, logname => 'TRUNCATE_GBUDB'   }, type => 'normal' },
         { domain => 'bl.spamcop.net',       userdata => { hit => 3.25, miss => 0, logname => 'SPAMCOP' 		}, type => 'normal' },
+	{ domain => 'bad.psky.me',          userdata => { hit => 1.0,  miss => 0, logname => 'PSKY'             }, type => 'normal' },
         { domain => 'dnsbl.sorbs.net', 	    userdata => { hit => 3.25, miss => 0, logname => 'SORBS' 		}, type => 'normal' },
         { domain => 'ix.dnsbl.manitu.net',  userdata => { hit => 3.25, miss => 0, logname => 'IX_MANITU' 	}, type => 'normal' },
 	# you need to register to use barracuda ... see http://www.barracudacentral.org/rbl/
