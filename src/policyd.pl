@@ -229,7 +229,7 @@ while (<STDIN>) {
         }
         # should perhaps nuke @pretty_text if the rule returned 0 ? (SPF data muted if it makes no difference.)
         push (@pretty_text, $response{state}) unless $response{state} eq '' or $response{state} =~ /Received-SPF: (neutral|none|softfail)/; # hacky.
-        push (@pretty_text, 'SPF_SOFTFAIL') if $response{state} =~ /Received-SPF: softfail/; # hacky.
+        push (@pretty_text, 'SPF_SOFTFAIL ' . $response{state} ) if $response{state} =~ /Received-SPF: softfail/; # hacky.
         my_syslog('debug', sprintf("handler %s: %s", $handler_name || '<UNKNOWN>', $response{state} || '<UNKNOWN>'));
 
         # Return back whatever is not DUNNO
@@ -340,7 +340,7 @@ sub sender_policy_framework {
         return ( score => 0, action => "550", state => $helo_authority_exp );
     }
     elsif ($helo_result->is_code('temperror')) {
-        return ( score => 0, action => "DEFER_IF_PERMIT", state => "SPF-Result=$helo_local_exp" );
+        return ( score => 0, action => "DUNNO", state => "SPF-Result=$helo_local_exp" );
     }
     elsif ($attr->{sender} eq '') {
         return ( score => 0, action => "PREPEND", state => $helo_spf_header ) 
@@ -451,8 +451,13 @@ sub client_address_dnsbl {
         #{ domain => 'sbl-xbl.spamhaus.org', userdata => { hit => 6.25, miss => 0, logname => 'SBL_XBL_SPAMHAUS' }, type => 'normal' },
         { domain => 'truncate.gbudb.net',   userdata => { hit => 3.0,  miss => 0, logname => 'TRUNCATE_GBUDB'   }, type => 'normal' },
         { domain => 'bl.spamcop.net',       userdata => { hit => 3.25, miss => 0, logname => 'SPAMCOP' 		}, type => 'normal' },
+	{ domain => 'bad.psky.me',          userdata => { hit => 1.0,  miss => 0, logname => 'PSKY'             }, type => 'normal' },
         { domain => 'dnsbl.sorbs.net', 	    userdata => { hit => 3.25, miss => 0, logname => 'SORBS' 		}, type => 'normal' },
         { domain => 'ix.dnsbl.manitu.net',  userdata => { hit => 3.25, miss => 0, logname => 'IX_MANITU' 	}, type => 'normal' },
+	# you need to register to use barracuda ... see http://www.barracudacentral.org/rbl/
+        { domain => 'b.barracudacentral.org',  userdata => { hit => 3.25, miss => 0, logname => 'BARRACUDA' 	}, type => 'normal' },
+        { domain => 'bl.spameatingmonkey.net',  userdata => { hit => 1.25, miss => 0, logname => 'SPAMEATINGMONKEY' 	}, type => 'normal' },
+        { domain => 'bl.mailspike.net',  userdata => { hit => 1.25, miss => 0, logname => 'MAILSPIKE' 	}, type => 'normal' },
         { domain => 'tor.ahnl.org', 	    userdata => { hit => 3.25, miss => 0, logname => 'AHNL_TOR' 	}, type => 'normal' },
     ];
 
