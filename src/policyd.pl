@@ -58,7 +58,7 @@ my $resolver = Net::DNS::Resolver->new(
 my $spf_server = Mail::SPF::Server->new(
     dns_resolver    => $resolver,
     query_rr_types  => Mail::SPF::Server->query_rr_type_all,
-    default_authority_explanation  => 'Please see http://www.openspf.net/Why?s=%{_scope};id=%{S};ip=%{C};r=%{R}'
+    default_authority_explanation  => 'SPF check failed; s=%{_scope} id=%{S} ip=%{C} r=%{R}'
 );
 
 # This will make the script far more verbose. Change this to 1.
