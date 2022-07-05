@@ -533,7 +533,7 @@ sub client_address_rhsbl {
         return ( score => 10, action => "550", state => "RHSBL Hits (cached) (IN_EXCOMMUNICADO)"); # lazy hack until we cache things properly, given there's only one BL atm
     }
     my @sender_domain_blacklists = [
-        { domain => 'excommunicado.co.uk',     userdata => { hit => 6.1, miss => 0, logname => 'EXCOMMUNICADO'   }, type => 'normal' },
+        # dead:{ domain => 'excommunicado.co.uk',     userdata => { hit => 6.1, miss => 0, logname => 'EXCOMMUNICADO'   }, type => 'normal' },
     ];
 
     my $bl_client = Net::DNSBL::Client->new({timeout => 1, resolver => $resolver});
